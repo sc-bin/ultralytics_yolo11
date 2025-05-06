@@ -74,7 +74,7 @@ class Detect(nn.Module):
         if self.training:  # Training path
             return x
         y = self._inference(x)
-        return y if self.export else (y, x)
+        return (y, x)
 
     def forward_end2end(self, x):
         """
@@ -207,7 +207,7 @@ class Segment(Detect):
         x = Detect.forward(self, x)
         if self.training:
             return x, mc, p
-        return (torch.cat([x, mc], 1), p) if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))
+        return x, mc, p if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))
 
 
 class OBB(Detect):
@@ -226,14 +226,15 @@ class OBB(Detect):
         bs = x[0].shape[0]  # batch size
         angle = torch.cat([self.cv4[i](x[i]).view(bs, self.ne, -1) for i in range(self.nl)], 2)  # OBB theta logits
         # NOTE: set `angle` as an attribute so that `decode_bboxes` could use it.
-        angle = (angle.sigmoid() - 0.25) * math.pi  # [-pi/4, 3pi/4]
+        if not self.export:
+            angle = (angle.sigmoid() - 0.25) * math.pi  # [-pi/4, 3pi/4]
         # angle = angle.sigmoid() * math.pi / 2  # [0, pi/2]
         if not self.training:
             self.angle = angle
         x = Detect.forward(self, x)
         if self.training:
             return x, angle
-        return torch.cat([x, angle], 1) if self.export else (torch.cat([x[0], angle], 1), (x[1], angle))
+        return (x, angle.sigmoid()) if self.export else (torch.cat([x[0], angle], 1), (x[1], angle))
 
     def decode_bboxes(self, bboxes, anchors):
         """Decode rotated bounding boxes."""
@@ -260,7 +261,7 @@ class Pose(Detect):
         if self.training:
             return x, kpt
         pred_kpt = self.kpts_decode(bs, kpt)
-        return torch.cat([x, pred_kpt], 1) if self.export else (torch.cat([x[0], pred_kpt], 1), (x[1], kpt))
+        return x,pred_kpt,kpt if self.export else (torch.cat([x[0], pred_kpt], 1), (x[1], kpt))
 
     def kpts_decode(self, bs, kpts):
         """Decodes keypoints."""
